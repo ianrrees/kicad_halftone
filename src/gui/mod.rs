@@ -1,4 +1,5 @@
-// mod gui;
+/// Mostly placeholder at this stage - need to figure out how to display raster
+/// graphics with IUI...
 
 extern crate iui;
 use self::iui::prelude::*;
