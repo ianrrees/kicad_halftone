@@ -1,8 +1,9 @@
 extern crate argparse;
 extern crate image;
 
-use argparse::{ArgumentParser, Store};
+use argparse::{ArgumentParser, Store, StoreTrue};
 use std::path::Path;
+use std::f32;
 
 #[cfg(feature="gui")]
 pub mod gui;
@@ -10,17 +11,17 @@ pub mod gui;
 pub mod kicad_mod;
 use kicad_mod::{Shape, XYCoord, Layer};
 
-// use std::fmt;
-
-// use image::GenericImage;
+use image::{GenericImage, FilterType};
+use image::imageops::{resize, colorops};
 
 /// Basic characteristics of the halftone image we're making.  Linear dimension in mm
 struct HalftoneParameters {
     dot_spacing: f32,
-    min_dot_diam: f32,
-    max_dot_diam: f32,
+    dot_min_diam: f32,
+    dot_max_diam: f32,
     output_width: f32,
     output_height: f32,
+    invert: bool,
 }
 
 fn main() {
@@ -30,31 +31,40 @@ fn main() {
     let mut output_filename = String::new();
 
     let mut halftone_params = HalftoneParameters {
-        dot_spacing: 0.0,
-        min_dot_diam: 0.0,
-        max_dot_diam: 0.0,
+        dot_spacing: 1.1,
+        dot_min_diam: 0.15, // From dirtypcbs.com
+        dot_max_diam: 1.2,
         output_width: 0.0,
         output_height: 0.0,
+        invert: false,
     };
 
     let launch_gui = false;
 
     { // Block is to control scope of borrows in refer() calls
-        let mut parser = ArgumentParser::new();
-        parser.set_description("Generate KiCad footprints from bitmaps, using halftone");
-        // TODO Add long description, explain that we need at least one of output width and height.
-        parser.refer(&mut input_filename).required().
-            add_argument("Input filename", Store, "Raster image source");
-        parser.refer(&mut output_filename).
-            add_option(&["-o", "--output"], Store, "Output file name");
-        parser.refer(&mut halftone_params.output_width).
-            add_option(&["-w", "--width"], Store, "Output width");
-        parser.refer(&mut halftone_params.output_height).
-            add_option(&["-h", "--height"], Store, "Output height");
+        let mut p = ArgumentParser::new();
+        p.set_description("Generate KiCad footprints from bitmaps, using halftone technique.  At   \
+            least one of output width and output height needs to be specified.  If one is specified\
+            , then the input image's aspect ratio will be preserved, but if both are specified the \
+            image will be scaled to fit.");
+        p.refer(&mut input_filename).required().
+            add_argument("INPUT", Store, "Raster image source");
+        p.refer(&mut output_filename).
+            add_option(&["-o", "--output"], Store, "Output file name - defaults input base name");
+        p.refer(&mut halftone_params.dot_spacing).
+            add_option(&["-s", "--spacing"], Store, "Spacing between dots [mm]");
+        p.refer(&mut halftone_params.dot_min_diam).
+            add_option(&["-d", "--dot-min"], Store, "Minimum diameter of dots [mm]");
+        p.refer(&mut halftone_params.dot_max_diam).
+            add_option(&["-D", "--dot-max"], Store, "Maximum diameter of dots [mm]");
+        p.refer(&mut halftone_params.output_width).
+            add_option(&["-w", "--width"], Store, "Output width [mm]");
+        p.refer(&mut halftone_params.output_height).
+            add_option(&["-h", "--height"], Store, "Output height [mm]");
+        p.refer(&mut halftone_params.invert).
+            add_option(&["-i", "--invert"], StoreTrue, "Invert image brightness");
 
-        parser.parse_args_or_exit();
-
-        // TODO Ensure we've got at least one of output_width and output_height
+        p.parse_args_or_exit();
     }
 
     // Currently (November 2018), it seems that the Rust standard library doesn't have traits like
@@ -65,12 +75,10 @@ fn main() {
         return; // TODO Error
     }
     let output_path = if output_filename.is_empty() {
-            input_path.with_extension(&default_output_extension)
+            input_path.with_extension(&default_output_extension) // TODO strip the path part too
         } else {
             Path::new(&output_filename).to_path_buf()
         };
-
-    println!("Output {} x {}", halftone_params.output_width, halftone_params.output_height);
 
     if launch_gui {
         #[cfg(feature="gui")] {
@@ -84,28 +92,133 @@ fn main() {
 
     } else {
         println!("Start CLI version");
-
     }
 
-    // Want to end up here knowing the HalftoneParameters, source, and destination filenames
+    let source_image = image::open(&input_path).expect(
+        &format!("Failed to open source image \"{}\"", &input_filename));
+    let source_image_dims = source_image.dimensions();
+    // Prevent possible divide-by-0
+    if source_image_dims.0 == 0 || source_image_dims.1 == 0 {
+        println!("Source image has no area; width and/or height is 0");
+        return; // TODO Error
+    }
 
-    // let source_image = image::open(source_filename).expect(
-    //     &format!("Failed to open source image \"{}\"", source_filename));
+    // Ensure both output width and height are set in halftone_params - at least one of them needs
+    // to be set from CLI or GUI
+    if halftone_params.output_width == 0.0 &&
+       halftone_params.output_height == 0.0 {
+        println!("Need at least one of output width and height specified");
+        return; // TODO Error
+    } else if halftone_params.output_width != 0.0 &&
+              halftone_params.output_height == 0.0 {
+        // Width specified, calculate height based on image
+        halftone_params.output_height = halftone_params.output_width *
+            source_image_dims.1 as f32 / source_image_dims.0 as f32;
 
-    // let dims = source_image.dimensions();
-    // println!("Source image has size {}x{}", dims.0, dims.1);
+    } else if halftone_params.output_width == 0.0 &&
+              halftone_params.output_height != 0.0 {
+        // Height specified, calculate width based on image
+        halftone_params.output_width = halftone_params.output_height *
+            source_image_dims.0 as f32 / source_image_dims.1 as f32;
+    }
+
+    // Calculate number of rows and columns
+    let half_dot_space = halftone_params.dot_spacing / 2.0;
+    let max_dot_radius = halftone_params.dot_max_diam / 2.0;
+
+    let row_spacing = halftone_params.dot_spacing * f32::to_radians(60.0).sin();
+
+    let usable_width  = halftone_params.output_width -  halftone_params.dot_max_diam;
+    let usable_height = halftone_params.output_height - halftone_params.dot_max_diam;
+
+    let num_cols = (usable_width / half_dot_space).floor() as usize;
+    let num_rows = (usable_height / row_spacing).floor() as usize;
+
+    // intensity is in range [0, 1]
+    let radius_from_intensity = |intensity:f32| -> f32 {
+        // Derivation:
+        // intensity = area_dot / area_max 
+        // intensity * area_max = area_dot
+        // intensity * area_max = pi * radius_dot^2
+        // (intensity * area_max) / pi = radius_dot^2
+        // ((intensity * area_max) / pi).sqrt() = radius_dot
+
+        use f32::consts::PI;
+        let area_max = PI * max_dot_radius.powi(2);
+        let rad = ((intensity * area_max) / PI).sqrt();
+
+        if rad.is_nan() {
+            0.0
+        } else {
+            rad
+        }
+    };
+
+    // There's bound to be a more elegant way to do this...  We're not scaling the output based on
+    // the input image, but rather are scaling an intermediate raster image, which is then used to
+    // generate the halftone.
+    let px_per_mm = 5.0;  // input pixels, per output mm
+
+    // Scale image to match the halftone grid
+    let image = colorops::grayscale(&resize(&source_image,
+        (halftone_params.output_width * px_per_mm).ceil() as u32,
+        (halftone_params.output_height * px_per_mm).ceil() as u32,
+        FilterType::Lanczos3));
 
     let mut shapes = Vec::<Shape>::new();
 
-    // TODO: Iterate over the image here
-    let coord = XYCoord {
-        x : 0.0,
-        y : 1.27
+    // Just used to shift the footprint so it's centered on the origin
+    let center = XYCoord {
+        x : (num_cols as f32) / 2.0 * half_dot_space + max_dot_radius,
+        y : (num_rows as f32) / 2.0 * row_spacing + max_dot_radius,
     };
 
-    let s = Shape::filled_circle(coord, 0.2, Layer::FrontSilkscreen);
+    // TODO draw border of image on the fab layer
 
-    shapes.push(s);
+    for row in 0..num_rows {
+        for col in 0..num_cols {
+            // Make diagonal grid pattern by skipping half of positions
+            if (row & 1) != (col & 1) {
+                continue;
+            }
+
+            let coord = XYCoord {
+                x : col as f32 * half_dot_space + max_dot_radius,
+                y : row as f32 * row_spacing + max_dot_radius,
+            };
+
+            // Compute dot diam based on image intensity near point
+            let mut score:u64 = 0;
+            let mut max_score:u64 = 0;
+            let left_px = ((coord.x - max_dot_radius) * px_per_mm).floor() as u32;
+            let top_px = ((coord.y - max_dot_radius) * px_per_mm).floor() as u32;
+            let diam_px = (2.0 * max_dot_radius).ceil() as u32;
+            for y_px in top_px..(top_px + diam_px) {
+                for x_px in left_px..(left_px + diam_px) {
+                    // Force px to u8, so that we do the right thing with max_score
+                    let px:u8 = image.get_pixel(x_px, y_px).data[0];
+                    score += px as u64;
+                    max_score += u8::max_value() as u64; // TODO scale based on radius?
+                }
+            }
+
+            let intensity = if halftone_params.invert {
+                    1.0 - (score as f32 / max_score as f32)
+                } else {
+                    score as f32 / max_score as f32
+                };
+
+            let radius = radius_from_intensity(intensity);
+            if radius <= 0.0 || radius * 2.0 < halftone_params.dot_min_diam {
+                continue;
+            }
+
+            shapes.push(Shape::filled_circle(
+                coord - center,
+                radius,
+                Layer::FrontSilkscreen));
+        }
+    }
 
     kicad_mod::write(&shapes, &output_path).unwrap();
 }

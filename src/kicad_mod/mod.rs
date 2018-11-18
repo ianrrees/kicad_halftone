@@ -4,24 +4,46 @@ use std::fs::File;
 use std::path::Path;
 use std::io::prelude::*;
 
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct XYCoord {
     pub x: f32,
     pub y: f32,
 }
 
+impl std::ops::Add for XYCoord {
+    type Output = XYCoord;
+    fn add(self, rhs:Self) -> Self {
+        XYCoord {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y
+        }
+    }
+}
+
+impl std::ops::Sub for XYCoord {
+    type Output = XYCoord;
+    fn sub(self, rhs:Self) -> Self {
+        XYCoord {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y
+        }
+    }
+}
+
 pub enum Layer {
     FrontSilkscreen,
     // FrontMask,
-    // FrontCopper,
+    FrontCopper,
     // BackCopper,
     // BackMask,
     // BaskSilkscreen,
 }
 
 impl Layer {
-    pub fn to_string(&self) -> String {
+    pub fn to_string(&self) -> &'static str {
         match self {
-            Layer::FrontSilkscreen => String::from("F.SilkS"),
+            Layer::FrontSilkscreen => "F.SilkS",
+            Layer::FrontCopper => "F.Cu",
         }
     }
 }
