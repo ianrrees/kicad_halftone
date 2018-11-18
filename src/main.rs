@@ -2,8 +2,7 @@ extern crate argparse;
 extern crate image;
 
 use argparse::{ArgumentParser, Store, StoreTrue};
-use std::path::Path;
-use std::f32;
+use std::path::{Path, PathBuf};
 
 #[cfg(feature="gui")]
 pub mod gui;
@@ -11,7 +10,7 @@ pub mod gui;
 pub mod kicad_mod;
 use kicad_mod::{Shape, XYCoord, Layer};
 
-use image::{GenericImage, FilterType};
+use image::{DynamicImage, FilterType, GenericImage};
 use image::imageops::{resize, colorops};
 
 /// Basic characteristics of the halftone image we're making.  Linear dimension in mm
@@ -24,7 +23,8 @@ struct HalftoneParameters {
     invert: bool,
 }
 
-fn main() {
+/// Parses command line arguments
+fn parse_cli() -> Result<(DynamicImage, PathBuf, HalftoneParameters), String> {
     let default_output_extension = "kicad_mod";
 
     let mut input_filename = String::new(); // At some stage, these should be replaceable with PathBuf's
@@ -38,8 +38,6 @@ fn main() {
         output_height: 0.0,
         invert: false,
     };
-
-    let launch_gui = false;
 
     { // Block is to control scope of borrows in refer() calls
         let mut p = ArgumentParser::new();
@@ -71,57 +69,58 @@ fn main() {
     // FromStr, so we need to use Strings for the command line parsing, then build Paths explicitly
     let input_path = Path::new(&input_filename);
     if !input_path.is_file() {
-        println!("Couldn't read {}", &input_filename);
-        return; // TODO Error
+        return Err(format!("Couldn't read {}", &input_filename));
     }
+
     let output_path = if output_filename.is_empty() {
-            input_path.with_extension(&default_output_extension) // TODO strip the path part too
+            match input_path.with_extension(&default_output_extension).file_name() {
+                Some(name) => PathBuf::from(name),
+                // I don't think this is possible, but...
+                None => ["output.", &default_output_extension].iter().collect(),
+            }
         } else {
             Path::new(&output_filename).to_path_buf()
         };
 
-    if launch_gui {
-        #[cfg(feature="gui")] {
-            println!("Start GUI version");
-            gui::launch_gui();
+    match image::open(&input_path) {
+        Ok(source_image) => {
+            let source_image_dims = source_image.dimensions();
+
+            // Prevent possible divide-by-0
+            if source_image_dims.0 == 0 || source_image_dims.1 == 0 {
+                return Err("Command line parsing failed: \
+                    Source image has no area; width and/or height is 0".to_string());
+            }
+
+            // Ensure both output width and height are set in halftone_params:
+            // At least one of them needs to be set from CLI or GUI
+            if halftone_params.output_width == 0.0 &&
+               halftone_params.output_height == 0.0 {
+                return Err("Command line parsing failed: \
+                    Need at least one of output width and height specified".to_string());
+            } else if halftone_params.output_width != 0.0 &&
+                      halftone_params.output_height == 0.0 {
+                // Width specified, calculate height based on image
+                halftone_params.output_height = halftone_params.output_width *
+                    source_image_dims.1 as f32 / source_image_dims.0 as f32;
+
+            } else if halftone_params.output_width == 0.0 &&
+                      halftone_params.output_height != 0.0 {
+                // Height specified, calculate width based on image
+                halftone_params.output_width = halftone_params.output_height *
+                    source_image_dims.0 as f32 / source_image_dims.1 as f32;
+            }
+
+            return Ok((source_image, output_path, halftone_params));
+        },
+        Err(e) => {
+            return Err(e.to_string());
         }
-        #[cfg(not(feature="gui"))] {
-            println!("GUI not built in, sorry...");
-            std::process::exit(1);
-        }
-
-    } else {
-        println!("Start CLI version");
     }
+}
 
-    let source_image = image::open(&input_path).expect(
-        &format!("Failed to open source image \"{}\"", &input_filename));
-    let source_image_dims = source_image.dimensions();
-    // Prevent possible divide-by-0
-    if source_image_dims.0 == 0 || source_image_dims.1 == 0 {
-        println!("Source image has no area; width and/or height is 0");
-        return; // TODO Error
-    }
-
-    // Ensure both output width and height are set in halftone_params - at least one of them needs
-    // to be set from CLI or GUI
-    if halftone_params.output_width == 0.0 &&
-       halftone_params.output_height == 0.0 {
-        println!("Need at least one of output width and height specified");
-        return; // TODO Error
-    } else if halftone_params.output_width != 0.0 &&
-              halftone_params.output_height == 0.0 {
-        // Width specified, calculate height based on image
-        halftone_params.output_height = halftone_params.output_width *
-            source_image_dims.1 as f32 / source_image_dims.0 as f32;
-
-    } else if halftone_params.output_width == 0.0 &&
-              halftone_params.output_height != 0.0 {
-        // Height specified, calculate width based on image
-        halftone_params.output_width = halftone_params.output_height *
-            source_image_dims.0 as f32 / source_image_dims.1 as f32;
-    }
-
+/// The meat of this program - produces a bunch of dots and such from a raster graphic
+fn make_halftone(source_image: DynamicImage, halftone_params: HalftoneParameters) -> Vec<Shape> {
     // Calculate number of rows and columns
     let half_dot_space = halftone_params.dot_spacing / 2.0;
     let max_dot_radius = halftone_params.dot_max_diam / 2.0;
@@ -136,6 +135,8 @@ fn main() {
 
     // intensity is in range [0, 1]
     let radius_from_intensity = |intensity:f32| -> f32 {
+        use std::f32::consts::PI;
+
         // Derivation:
         // intensity = area_dot / area_max 
         // intensity * area_max = area_dot
@@ -143,7 +144,6 @@ fn main() {
         // (intensity * area_max) / pi = radius_dot^2
         // ((intensity * area_max) / pi).sqrt() = radius_dot
 
-        use f32::consts::PI;
         let area_max = PI * max_dot_radius.powi(2);
         let rad = ((intensity * area_max) / PI).sqrt();
 
@@ -220,5 +220,29 @@ fn main() {
         }
     }
 
-    kicad_mod::write(&shapes, &output_path).unwrap();
+    shapes
+}
+
+fn main() {
+    // if launch_gui {
+    //     #[cfg(feature="gui")] {
+    //         println!("Start GUI version");
+    //         gui::launch_gui();
+    //     }
+    //     #[cfg(not(feature="gui"))] {
+    //         println!("GUI not built in, sorry...");
+    //         std::process::exit(1);
+    //     }
+    // }
+
+    match parse_cli() {
+        Ok((source_image, output_path, halftone_params)) => {
+            let shapes = make_halftone(source_image, halftone_params);
+            kicad_mod::write(&shapes, &output_path).unwrap();
+        },
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(1);
+        }
+    }
 }

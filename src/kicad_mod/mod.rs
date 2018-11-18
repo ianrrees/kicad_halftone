@@ -34,6 +34,7 @@ pub enum Layer {
     FrontSilkscreen,
     // FrontMask,
     FrontCopper,
+    FrontFabrication,
     // BackCopper,
     // BackMask,
     // BaskSilkscreen,
@@ -44,6 +45,7 @@ impl Layer {
         match self {
             Layer::FrontSilkscreen => "F.SilkS",
             Layer::FrontCopper => "F.Cu",
+            Layer::FrontFabrication => "F.Fab",
         }
     }
 }
