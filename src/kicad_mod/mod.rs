@@ -52,6 +52,7 @@ impl Layer {
 
 pub enum Geometry {
     Circle { center: XYCoord, radius: f32},
+    Line { ends: [XYCoord; 2] },
     // Poly { points: Vec<XYCoord>},
     // Text { location: XYCoord, text: String},
 }
@@ -75,6 +76,16 @@ impl Shape {
         }
     }
 
+    pub fn line(start: XYCoord, end: XYCoord, width: f32, layer: Layer) -> Self {
+        Shape {
+            layer,
+            geom: Geometry::Line {
+                ends: [start, end]
+            },
+            thickness: width
+        }
+    }
+
     pub fn write_to_file(&self, out_file: &mut File) -> std::io::Result<()> {
         let mut s = String::new();
 
@@ -83,6 +94,10 @@ impl Shape {
                 s.push_str(&format!(" (fp_circle (center {} {}) (end {} {})",
                     center.x, center.y, center.x + radius, center.y));
             },
+            Geometry::Line{ref ends} => {
+                s.push_str(&format!(" (fp_line (start {} {}) (end {} {})",
+                    ends[0].x, ends[0].y, ends[1].x, ends[1].y));
+            }
         }
 
         s.push_str(&format!(" (layer {})", self.layer.to_string()));
