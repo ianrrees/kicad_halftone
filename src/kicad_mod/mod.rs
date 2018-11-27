@@ -1,8 +1,5 @@
 /// Currently, just used for writing a limited subset of KiCad footprint files
-
-use std::fs::File;
-use std::path::Path;
-use std::io::prelude::*;
+use std::io::Write;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct XYCoord {
@@ -86,7 +83,7 @@ impl Shape {
         }
     }
 
-    pub fn write_to_file(&self, out_file: &mut File) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut Write) -> std::io::Result<()> {
         let mut s = String::new();
 
         match self.geom {
@@ -104,24 +101,21 @@ impl Shape {
 
         s.push_str(&format!(" (width {}))\n", self.thickness));
 
-        out_file.write(s.as_bytes())?;
+        out.write(s.as_bytes())?;
 
         Ok(())
     }
 }
 
-pub fn write(shapes: &Vec<Shape>, out_path: &Path) -> std::io::Result<()> {
-
-    let mut out_file = File::create(out_path)?;
-
+pub fn write(shapes: &Vec<Shape>, out: &mut Write) -> std::io::Result<()> {
     // TODO Name, timestamp, etc
-    out_file.write(b"(module test (layer F.Cu) (tedit 5BDB7444)\n")?;
+    out.write(b"(module test (layer F.Cu) (tedit 5BDB7444)\n")?;
 
     for shape in shapes {
-        shape.write_to_file(&mut out_file)?;
+        shape.write(out)?;
     }
 
-    out_file.write(b")\n")?;
+    out.write(b")\n")?;
 
     Ok(())
 }

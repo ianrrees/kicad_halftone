@@ -1,6 +1,9 @@
 /// Mostly placeholder at this stage - need to figure out how to display raster
 /// graphics with IUI...
 
+
+// DISREGARD THIS - NEW PLAN IS TO USE CONROD
+
 extern crate iui;
 use self::iui::prelude::*;
 use self::iui::controls::{HorizontalBox, VerticalBox, Button};

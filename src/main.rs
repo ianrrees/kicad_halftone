@@ -2,6 +2,7 @@ extern crate argparse;
 extern crate image;
 
 use argparse::{ArgumentParser, Store, StoreTrue};
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature="gui")]
@@ -290,8 +291,12 @@ fn main() {
         },
 
         Ok(ProgramSettings::Cli{source_image, output_path, params}) => {
+            let mut out_file = File::create(output_path).unwrap(); // TODO check for existence first
+
             let shapes = make_halftone(source_image, params);
-            kicad_mod::write(&shapes, &output_path).unwrap();
+
+
+            kicad_mod::write(&shapes, &mut out_file).unwrap();
         },
 
         Err(e) => {
