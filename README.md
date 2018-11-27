@@ -1,18 +1,19 @@
 # kicad_halftone
 Turns raster images in to PCB silkscreen images using halftone technique
 
-I've been meaning to learn Rust for ages; this is a mainly a toy project towards that.
+I've been meaning to learn Rust for ages; this is a mainly a toy project towards that.  See my [post on an earlier iteration](http://ianrrees.github.io/2018/06/20/pcb-graphics-with-kicad-+-gimp.html) for some background.
 
 ![Example input](examples/curiosity-in-small.jpg) to ![Example output](examples/curiosity-out-small.png)
 
-Very much a work in progress.
+Still a work in progress, when I've got some free time and feel like programming...
 
-Building
+## Building
 
   1. Clone this repo
   2. Install Rust and cargo
   3. `$cargo build`
 
+## Using
 ```
 $ cargo run -- --help
     Finished dev [unoptimized + debuginfo] target(s) in 0.04s
