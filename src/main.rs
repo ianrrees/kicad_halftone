@@ -1,7 +1,8 @@
-extern crate argparse;
+extern crate clap;
+use clap::{Arg, App, value_t};
+
 extern crate image;
 
-use argparse::{ArgumentParser, Store, StoreTrue};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,7 @@ use std::path::{Path, PathBuf};
 pub mod gui;
 
 pub mod kicad_mod;
-use kicad_mod::{Shape, XYCoord, Layer};
+use self::kicad_mod::{Shape, XYCoord, Layer};
 
 use image::{DynamicImage, FilterType, GenericImage};
 use image::imageops::{resize, colorops};
@@ -34,55 +35,69 @@ enum ProgramSettings {
 fn parse_command_line() -> Result<ProgramSettings, String> {
     let default_output_extension = "kicad_mod";
 
-    let mut input_filename = String::new(); // At some stage, these should be replaceable with PathBuf's
-    let mut output_filename = String::new();
-    let mut launch_gui = false;
+    let cli_base = App::new(clap::crate_name!())
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about("Generate KiCad footprints from bitmaps, using halftone technique\
+            .  At least one of output width and output height needs to be specified.  \
+            If one is specified, then the input image's aspect ratio will be \
+            preserved, but if both are specified the image will be scaled to fit.")
+        .arg(Arg::with_name("INPUT")
+           .help("Raster image source")
+           .index(1))
+        .arg(Arg::with_name("OUTPUT")
+           .help("Output file name - defaults input base name")
+           .index(2))
+        .arg(Arg::with_name("dot_spacing").takes_value(true)
+            .help("Spacing between dots [mm]")
+            .short("s").long("spacing"))
+        .arg(Arg::with_name("dot_min_diam").takes_value(true)
+            .help("Minimum diameter of dots [mm]")
+            .short("d").long("dot-min"))
+        .arg(Arg::with_name("dot_max_diam").takes_value(true)
+            .help("Maximum diameter of dots [mm]")
+            .short("D").long("dot-max"))
+        .arg(Arg::with_name("output_width").takes_value(true)
+            .help("Output width [mm]")
+            .short("w").long("width"))
+        .arg(Arg::with_name("output_height").takes_value(true)
+            .help("Output height [mm]")
+            .short("h").long("height"))
+        .arg(Arg::with_name("invert")
+            .help("Invert image brightness")
+            .short("i").long("invert"));
 
-    let mut params = HalftoneParameters {
-        dot_spacing: 1.1,
-        dot_min_diam: 0.15, // From dirtypcbs.com
-        dot_max_diam: 1.2,
-        output_width: 0.0,
-        output_height: 0.0,
-        invert: false,
-    };
-
-    { // Block is to control scope of borrows in refer() calls
-        let mut p = ArgumentParser::new();
-        p.set_description("Generate KiCad footprints from bitmaps, using halftone technique.  At   \
-            least one of output width and output height needs to be specified.  If one is specified\
-            , then the input image's aspect ratio will be preserved, but if both are specified the \
-            image will be scaled to fit.");
-        p.refer(&mut input_filename).required().
-            add_argument("INPUT", Store, "Raster image source");
-        p.refer(&mut output_filename).
-            add_option(&["-o", "--output"], Store, "Output file name - defaults input base name");
-        p.refer(&mut params.dot_spacing).
-            add_option(&["-s", "--spacing"], Store, "Spacing between dots [mm]");
-        p.refer(&mut params.dot_min_diam).
-            add_option(&["-d", "--dot-min"], Store, "Minimum diameter of dots [mm]");
-        p.refer(&mut params.dot_max_diam).
-            add_option(&["-D", "--dot-max"], Store, "Maximum diameter of dots [mm]");
-        p.refer(&mut params.output_width).
-            add_option(&["-w", "--width"], Store, "Output width [mm]");
-        p.refer(&mut params.output_height).
-            add_option(&["-h", "--height"], Store, "Output height [mm]");
-        p.refer(&mut params.invert).
-            add_option(&["-i", "--invert"], StoreTrue, "Invert image brightness");
-        p.refer(&mut launch_gui).
-            add_option(&["-g", "--gui"], StoreTrue, "Launch GUI (if support is available)");
-
-        p.parse_args_or_exit();
+    let cli;
+    #[cfg(feature="gui")] {
+        cli = cli_base
+            .arg(Arg::with_name("gui")
+                .help("Starts the graphical interface")
+                .short("g").long("gui"))
+            .get_matches();
+    }
+    #[cfg(not(feature="gui"))] {
+        cli = cli_base.get_matches();
     }
 
-    if input_filename.is_empty() {
+    let mut params = HalftoneParameters {
+        dot_spacing:   value_t!(cli, "dot_spacing",   f32).unwrap_or(1.1),
+        dot_min_diam:  value_t!(cli, "dot_min_diam",  f32).unwrap_or(0.15), // From dirtypcbs.com
+        dot_max_diam:  value_t!(cli, "dot_max_diam",  f32).unwrap_or(1.2),
+        output_width:  value_t!(cli, "output_width",  f32).unwrap_or(0.0),
+        output_height: value_t!(cli, "output_height", f32).unwrap_or(0.0),
+        invert: cli.is_present("invert"),
+    };
+
+    // INPUT is required for CLI, not for GUI
+    if !cli.is_present("INPUT") {
         #[cfg(feature="gui")] {
-            if launch_gui {
-                let output_path = if output_filename.is_empty() {
-                    ["output.", &default_output_extension].iter().collect()
-                } else {
-                    Path::new(&output_filename).to_path_buf()
-                };
+            if cli.is_present("gui") {
+                let mut default_output_name: String = "output".to_owned();
+                default_output_name.push_str(&default_output_extension);
+
+                let output_path = Path::new(&cli.value_of("OUTPUT").
+                    unwrap_or(&default_output_name))
+                    .to_path_buf();
 
                 return Ok(ProgramSettings::Gui{
                     source_image: None,
@@ -90,27 +105,32 @@ fn parse_command_line() -> Result<ProgramSettings, String> {
                     params
                 });
             }
+            return Err("Input file name is required if --gui is not specified".to_string());
         }
 
-        return Err("Input file name is required if --gui is not specified".to_string());
+        #[cfg(not(feature="gui"))] {
+            return Err("Input file name is required".to_string());
+        }
     }
 
-    // Currently (November 2018), it seems that the Rust standard library doesn't have traits like
+    // Currently (November 2018), it seems that the Rust Path library doesn't have traits like
     // FromStr, so we need to use Strings for the command line parsing, then build Paths explicitly
+    let input_filename = cli.value_of("INPUT").unwrap_or("");
     let input_path = Path::new(&input_filename);
     if !input_path.is_file() {
         return Err(format!("Couldn't read {}", &input_filename));
     }
 
-    let output_path = if output_filename.is_empty() {
+    let output_path = if cli.is_present("OUTPUT") {
+            Path::new(&cli.value_of("OUTPUT").unwrap_or("")).to_path_buf()
+        } else {
             match input_path.with_extension(&default_output_extension).file_name() {
                 Some(name) => PathBuf::from(name),
                 // I don't think this is possible, but...
                 None => ["output.", &default_output_extension].iter().collect(),
             }
-        } else {
-            Path::new(&output_filename).to_path_buf()
         };
+
 
     match image::open(&input_path) {
         Err(e) => {
@@ -123,6 +143,10 @@ fn parse_command_line() -> Result<ProgramSettings, String> {
             if source_image_dims.0 == 0 || source_image_dims.1 == 0 {
                 return Err("Command line parsing failed: \
                     Source image has no area; width and/or height is 0".to_string());
+            }
+
+            if params.output_width < 0.0 || params.output_height < 0.0 {
+                return Err("Can't use negative values for width or height!".to_string());
             }
 
             // Ensure both output width and height are set in halftone_params:
@@ -145,7 +169,7 @@ fn parse_command_line() -> Result<ProgramSettings, String> {
             }
 
             #[cfg(feature="gui")] {
-                if launch_gui {
+                if cli.is_present("gui") {
                     return Ok(ProgramSettings::Gui{
                         source_image: Some(source_image),
                         output_path,
