@@ -15,28 +15,50 @@ Still a work in progress, when I've got some free time and feel like programming
 
 ## Using
 ```
-$ cargo run -- --help
-    Finished dev [unoptimized + debuginfo] target(s) in 0.04s
+kicad_halftone$ cargo run -- --help
+    Finished dev [unoptimized + debuginfo] target(s) in 0.14s
      Running `target/debug/kicad_halftone --help`
-Usage:
-  target/debug/kicad_halftone [OPTIONS] INPUT
+kicad_halftone 0.1.0
+Ian Rees <ian.rees@gmail.com>
+Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width and output height needs
+to be specified.  If one is specified, then the input image's aspect ratio will be preserved, but if both are specified
+the image will be scaled to fit.
 
-Generate KiCad footprints from bitmaps, using halftone technique. At least one
-of output width and output height needs to be specified. If one is specified,
-then the input image's aspect ratio will be preserved, but if both are
-specified the image will be scaled to fit.
+USAGE:
+    kicad_halftone [FLAGS] [OPTIONS] [ARGS]
 
-Positional arguments:
-  INPUT                 Raster image source
+FLAGS:
+        --help
+            Prints help information
 
-Optional arguments:
-  -h,--help             Show this help message and exit
-  -o,--output OUTPUT    Output file name - defaults input base name
-  -s,--spacing SPACING  Spacing between dots [mm]
-  -d,--dot-min DOT_MIN  Minimum diameter of dots [mm]
-  -D,--dot-max DOT_MAX  Maximum diameter of dots [mm]
-  -w,--width WIDTH      Output width [mm]
-  -h,--height HEIGHT    Output height [mm]
-  -i,--invert           Invert image brightness
-  -g,--gui              Launch GUI (if support is available)
+    -i, --invert
+            Invert image brightness
+
+    -V, --version
+            Prints version information
+
+
+OPTIONS:
+    -D, --dot-max <dot_max_diam>
+            Maximum diameter of dots [mm]
+
+    -d, --dot-min <dot_min_diam>
+            Minimum diameter of dots [mm]
+
+    -s, --spacing <dot_spacing>
+            Spacing between dots [mm]
+
+    -h, --height <output_height>
+            Output height [mm]
+
+    -w, --width <output_width>
+            Output width [mm]
+
+
+ARGS:
+    <INPUT>
+            Raster image source
+
+    <OUTPUT>
+            Output file name - defaults input base name
 ```

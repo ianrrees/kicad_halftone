@@ -38,10 +38,11 @@ fn parse_command_line() -> Result<ProgramSettings, String> {
     let cli_base = App::new(clap::crate_name!())
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
-        .about("Generate KiCad footprints from bitmaps, using halftone technique\
-            .  At least one of output width and output height needs to be specified.  \
-            If one is specified, then the input image's aspect ratio will be \
-            preserved, but if both are specified the image will be scaled to fit.")
+        .about("Generate KiCad footprints from bitmaps, using halftone technique")
+        .long_about(
+"Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width \
+and output height needs to be specified.  If one is specified, then the input image's aspect ratio \
+will be preserved, but if both are specified the image will be scaled to fit.")
         .arg(Arg::with_name("INPUT")
            .help("Raster image source")
            .index(1))
