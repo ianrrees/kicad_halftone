@@ -83,7 +83,7 @@ impl Shape {
         }
     }
 
-    pub fn write(&self, out: &mut Write) -> std::io::Result<()> {
+    pub fn write(&self, out: &mut dyn Write) -> std::io::Result<()> {
         let mut s = String::new();
 
         match self.geom {
@@ -107,7 +107,7 @@ impl Shape {
     }
 }
 
-pub fn write(shapes: &Vec<Shape>, out: &mut Write) -> std::io::Result<()> {
+pub fn write(shapes: &Vec<Shape>, out: &mut dyn Write) -> std::io::Result<()> {
     // TODO Name, timestamp, etc
     out.write(b"(module test (layer F.Cu) (tedit 5BDB7444)\n")?;
 

@@ -1,5 +1,5 @@
 extern crate clap;
-use clap::{Arg, App, value_t};
+use clap::{Arg, Command};
 
 extern crate image;
 
@@ -12,8 +12,8 @@ pub mod gui;
 pub mod kicad_mod;
 use self::kicad_mod::{Shape, XYCoord, Layer};
 
-use image::{DynamicImage, FilterType, GenericImage};
-use image::imageops::{resize, colorops};
+use image::{DynamicImage, GenericImageView, Pixel};
+use image::imageops::{resize, colorops, FilterType};
 
 /// Basic characteristics of the halftone image we're making.  Linear dimension in mm
 struct HalftoneParameters {
@@ -35,7 +35,7 @@ enum ProgramSettings {
 fn parse_command_line() -> Result<ProgramSettings, String> {
     let default_output_extension = "kicad_mod";
 
-    let cli_base = App::new(clap::crate_name!())
+    let cli_base = Command::new(clap::crate_name!())
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
         .about("Generate KiCad footprints from bitmaps, using halftone technique")
@@ -43,35 +43,36 @@ fn parse_command_line() -> Result<ProgramSettings, String> {
 "Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width \
 and output height needs to be specified.  If one is specified, then the input image's aspect ratio \
 will be preserved, but if both are specified the image will be scaled to fit.")
-        .arg(Arg::with_name("INPUT")
+        .arg(Arg::new("INPUT")
            .help("Raster image source")
            .index(1))
-        .arg(Arg::with_name("OUTPUT")
+        .arg(Arg::new("OUTPUT")
            .help("Output file name - defaults input base name")
            .index(2))
-        .arg(Arg::with_name("dot_spacing").takes_value(true)
+        .arg(Arg::new("dot_spacing") //.takes_value(true)
             .help("Spacing between dots [mm]")
-            .short("s").long("spacing"))
-        .arg(Arg::with_name("dot_min_diam").takes_value(true)
+            .short('s').long("spacing"))
+        .arg(Arg::new("dot_min_diam") //.takes_value(true)
             .help("Minimum diameter of dots [mm]")
-            .short("d").long("dot-min"))
-        .arg(Arg::with_name("dot_max_diam").takes_value(true)
+            .short('d').long("dot-min"))
+        .arg(Arg::new("dot_max_diam") //.takes_value(true)
             .help("Maximum diameter of dots [mm]")
-            .short("D").long("dot-max"))
-        .arg(Arg::with_name("output_width").takes_value(true)
+            .short('D').long("dot-max"))
+        .arg(Arg::new("output_width") //.takes_value(true)
             .help("Output width [mm]")
-            .short("w").long("width"))
-        .arg(Arg::with_name("output_height").takes_value(true)
+            .short('w').long("width"))
+        // .disable_help_flag(true) // Bad design - masks help short argument
+        .arg(Arg::new("output_height") //.takes_value(true)
             .help("Output height [mm]")
-            .short("h").long("height"))
-        .arg(Arg::with_name("invert")
+            .long("height"))
+        .arg(Arg::new("invert")
             .help("Invert image brightness")
-            .short("i").long("invert"));
+            .short('i').long("invert"));
 
     let cli;
     #[cfg(feature="gui")] {
         cli = cli_base
-            .arg(Arg::with_name("gui")
+            .arg(Arg::new("gui")
                 .help("Starts the graphical interface")
                 .short("g").long("gui"))
             .get_matches();
@@ -81,16 +82,16 @@ will be preserved, but if both are specified the image will be scaled to fit.")
     }
 
     let mut params = HalftoneParameters {
-        dot_spacing:   value_t!(cli, "dot_spacing",   f32).unwrap_or(1.1),
-        dot_min_diam:  value_t!(cli, "dot_min_diam",  f32).unwrap_or(0.15), // From dirtypcbs.com
-        dot_max_diam:  value_t!(cli, "dot_max_diam",  f32).unwrap_or(1.2),
-        output_width:  value_t!(cli, "output_width",  f32).unwrap_or(0.0),
-        output_height: value_t!(cli, "output_height", f32).unwrap_or(0.0),
-        invert: cli.is_present("invert"),
+        dot_spacing:   *cli.get_one::<f32>("dot_spacing").unwrap_or(&1.1),
+        dot_min_diam:  *cli.get_one::<f32>("dot_min_diam").unwrap_or(&0.15), // From dirtypcbs.com
+        dot_max_diam:  *cli.get_one::<f32>("dot_max_diam").unwrap_or(&1.2),
+        output_width:  *cli.get_one::<f32>("output_width").unwrap_or(&0.0),
+        output_height: *cli.get_one::<f32>("output_height").unwrap_or(&0.0),
+        invert: cli.contains_id("invert"),
     };
 
     // INPUT is required for CLI, not for GUI
-    if !cli.is_present("INPUT") {
+    if !cli.contains_id("INPUT") {
         #[cfg(feature="gui")] {
             if cli.is_present("gui") {
                 let mut default_output_name: String = "output".to_owned();
@@ -116,14 +117,14 @@ will be preserved, but if both are specified the image will be scaled to fit.")
 
     // Currently (November 2018), it seems that the Rust Path library doesn't have traits like
     // FromStr, so we need to use Strings for the command line parsing, then build Paths explicitly
-    let input_filename = cli.value_of("INPUT").unwrap_or("");
+    let input_filename = cli.get_one::<String>("INPUT").expect("Input file name is required");
     let input_path = Path::new(&input_filename);
     if !input_path.is_file() {
         return Err(format!("Couldn't read {}", &input_filename));
     }
 
-    let output_path = if cli.is_present("OUTPUT") {
-            Path::new(&cli.value_of("OUTPUT").unwrap_or("")).to_path_buf()
+    let output_path = if cli.contains_id("OUTPUT") {
+            Path::new(&cli.get_one::<String>("OUTPUT").unwrap_or(&"".to_string())).to_path_buf()
         } else {
             match input_path.with_extension(&default_output_extension).file_name() {
                 Some(name) => PathBuf::from(name),
@@ -280,7 +281,7 @@ fn make_halftone(source_image: DynamicImage, halftone_params: HalftoneParameters
                 for x_px in left_px..(left_px + diam_px) {
                     // Explicitly make px a u8, so that we do the right thing
                     // with max_score if get_pixel() bit depth improves
-                    let px:u8 = image.get_pixel(x_px, y_px).data[0];
+                    let px:u8 = image.get_pixel(x_px, y_px).channels()[0];
                     score += px as u64;
                     max_score += u8::max_value() as u64;
                 }

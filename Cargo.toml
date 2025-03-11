@@ -9,6 +9,6 @@ edition = "2018"
 gui = ["iui"]
 
 [dependencies]
-clap = "2.32.0"
-image = "0.19.0"
+clap = {version = "4.5", features = ["cargo"]}
+image = "0.24"
 iui = {version = "0.3", optional=true}
