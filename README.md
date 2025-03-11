@@ -17,50 +17,24 @@ Still a work in progress, when I've got some free time and feel like programming
 
 ## Using
 ```
-kicad_halftone$ cargo run -- --help
-    Finished dev [unoptimized + debuginfo] target(s) in 0.14s
-     Running `target/debug/kicad_halftone --help`
-kicad_halftone 0.1.0
-Ian Rees <ian.rees@gmail.com>
-Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width and output height needs
-to be specified.  If one is specified, then the input image's aspect ratio will be preserved, but if both are specified
-the image will be scaled to fit.
+➜  kicad_halftone git:(master) ✗ cargo run -- -h
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.03s
+     Running `target/debug/kicad_halftone -h`
+Generate KiCad footprints from bitmaps, using halftone technique
 
-USAGE:
-    kicad_halftone [FLAGS] [OPTIONS] [ARGS]
+Usage: kicad_halftone [OPTIONS] <INPUT> [OUTPUT]
 
-FLAGS:
-        --help
-            Prints help information
+Arguments:
+  <INPUT>   Raster image source
+  [OUTPUT]  Output file name - defaults input base name
 
-    -i, --invert
-            Invert image brightness
-
-    -V, --version
-            Prints version information
-
-
-OPTIONS:
-    -D, --dot-max <dot_max_diam>
-            Maximum diameter of dots [mm]
-
-    -d, --dot-min <dot_min_diam>
-            Minimum diameter of dots [mm]
-
-    -s, --spacing <dot_spacing>
-            Spacing between dots [mm]
-
-    -h, --height <output_height>
-            Output height [mm]
-
-    -w, --width <output_width>
-            Output width [mm]
-
-
-ARGS:
-    <INPUT>
-            Raster image source
-
-    <OUTPUT>
-            Output file name - defaults input base name
+Options:
+  -s, --spacing <DOT_SPACING>   Spacing between dots [mm] [default: 1.1]
+  -d, --dot-min <DOT_MIN_DIAM>  Minimum diameter of dots [mm] [default: 0.15]
+  -D, --dot-max <DOT_MAX_DIAM>  Maximum diameter of dots [mm] [default: 1.2]
+  -w, --width <OUTPUT_WIDTH>    Output width [mm] [default: 0]
+      --height <OUTPUT_HEIGHT>  Output height [mm] [default: 0]
+  -i, --invert                  Invert image brightness
+  -h, --help                    Print help (see more with '--help')
+  -V, --version                 Print version
 ```
