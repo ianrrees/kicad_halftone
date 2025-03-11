@@ -6,9 +6,6 @@ extern crate image;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-#[cfg(feature="gui")]
-pub mod gui;
-
 pub mod kicad_mod;
 use self::kicad_mod::{Shape, XYCoord, Layer};
 
@@ -25,17 +22,17 @@ struct HalftoneParameters {
     invert: bool,
 }
 
-enum ProgramSettings {
-    Cli {source_image: DynamicImage,         output_path: PathBuf, params: HalftoneParameters},
-    #[cfg(feature="gui")]
-    Gui {source_image: Option<DynamicImage>, output_path: PathBuf, params: HalftoneParameters},
+struct ProgramSettings {
+    source_image: DynamicImage,
+    output_path: PathBuf,
+    params: HalftoneParameters,
 }
 
 /// Parses command line arguments
 fn parse_command_line() -> Result<ProgramSettings, String> {
     let default_output_extension = "kicad_mod";
 
-    let cli_base = Command::new(clap::crate_name!())
+    let cli = Command::new(clap::crate_name!())
         .version(clap::crate_version!())
         .author(clap::crate_authors!())
         .about("Generate KiCad footprints from bitmaps, using halftone technique")
@@ -67,19 +64,8 @@ will be preserved, but if both are specified the image will be scaled to fit.")
             .long("height"))
         .arg(Arg::new("invert")
             .help("Invert image brightness")
-            .short('i').long("invert"));
-
-    let cli;
-    #[cfg(feature="gui")] {
-        cli = cli_base
-            .arg(Arg::new("gui")
-                .help("Starts the graphical interface")
-                .short("g").long("gui"))
-            .get_matches();
-    }
-    #[cfg(not(feature="gui"))] {
-        cli = cli_base.get_matches();
-    }
+            .short('i').long("invert"))
+        .get_matches();
 
     let mut params = HalftoneParameters {
         dot_spacing:   *cli.get_one::<f32>("dot_spacing").unwrap_or(&1.1),
@@ -90,29 +76,8 @@ will be preserved, but if both are specified the image will be scaled to fit.")
         invert: cli.contains_id("invert"),
     };
 
-    // INPUT is required for CLI, not for GUI
     if !cli.contains_id("INPUT") {
-        #[cfg(feature="gui")] {
-            if cli.is_present("gui") {
-                let mut default_output_name: String = "output".to_owned();
-                default_output_name.push_str(&default_output_extension);
-
-                let output_path = Path::new(&cli.value_of("OUTPUT").
-                    unwrap_or(&default_output_name))
-                    .to_path_buf();
-
-                return Ok(ProgramSettings::Gui{
-                    source_image: None,
-                    output_path,
-                    params
-                });
-            }
-            return Err("Input file name is required if --gui is not specified".to_string());
-        }
-
-        #[cfg(not(feature="gui"))] {
-            return Err("Input file name is required".to_string());
-        }
+        return Err("Input file name is required".to_string());
     }
 
     // Currently (November 2018), it seems that the Rust Path library doesn't have traits like
@@ -152,7 +117,7 @@ will be preserved, but if both are specified the image will be scaled to fit.")
             }
 
             // Ensure both output width and height are set in halftone_params:
-            // At least one of them needs to be set from CLI or GUI
+            // At least one of them needs to be supplied
             if params.output_width == 0.0 &&
                params.output_height == 0.0 {
                 return Err("Command line parsing failed: \
@@ -170,17 +135,7 @@ will be preserved, but if both are specified the image will be scaled to fit.")
                     source_image_dims.0 as f32 / source_image_dims.1 as f32;
             }
 
-            #[cfg(feature="gui")] {
-                if cli.is_present("gui") {
-                    return Ok(ProgramSettings::Gui{
-                        source_image: Some(source_image),
-                        output_path,
-                        params
-                    });
-                }
-            }
-
-            return Ok(ProgramSettings::Cli{
+            return Ok(ProgramSettings{
                 source_image,
                 output_path,
                 params
@@ -310,13 +265,7 @@ fn make_halftone(source_image: DynamicImage, halftone_params: HalftoneParameters
 
 fn main() {
     match parse_command_line() {
-        #[cfg(feature="gui")]
-        Ok(ProgramSettings::Gui{source_image, output_path, params}) => {
-            println!("Start GUI version");
-            gui::launch_gui();
-        },
-
-        Ok(ProgramSettings::Cli{source_image, output_path, params}) => {
+        Ok(ProgramSettings{source_image, output_path, params}) => {
             let mut out_file = File::create(output_path).unwrap(); // TODO check for existence first
 
             let shapes = make_halftone(source_image, params);

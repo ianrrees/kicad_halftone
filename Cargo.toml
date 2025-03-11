@@ -4,11 +4,6 @@ version = "0.1.0"
 authors = ["Ian Rees <ian.rees@gmail.com>"]
 edition = "2018"
 
-[features]
-# Still trying to get this part figured out...
-gui = ["iui"]
-
 [dependencies]
 clap = {version = "4.5", features = ["cargo"]}
 image = "0.24"
-iui = {version = "0.3", optional=true}
