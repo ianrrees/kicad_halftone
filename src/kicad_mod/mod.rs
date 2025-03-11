@@ -9,20 +9,20 @@ pub struct XYCoord {
 
 impl std::ops::Add for XYCoord {
     type Output = XYCoord;
-    fn add(self, rhs:Self) -> Self {
+    fn add(self, rhs: Self) -> Self {
         XYCoord {
             x: self.x + rhs.x,
-            y: self.y + rhs.y
+            y: self.y + rhs.y,
         }
     }
 }
 
 impl std::ops::Sub for XYCoord {
     type Output = XYCoord;
-    fn sub(self, rhs:Self) -> Self {
+    fn sub(self, rhs: Self) -> Self {
         XYCoord {
             x: self.x - rhs.x,
-            y: self.y - rhs.y
+            y: self.y - rhs.y,
         }
     }
 }
@@ -48,7 +48,7 @@ impl Layer {
 }
 
 pub enum Geometry {
-    Circle { center: XYCoord, radius: f32},
+    Circle { center: XYCoord, radius: f32 },
     Line { ends: [XYCoord; 2] },
     // Poly { points: Vec<XYCoord>},
     // Text { location: XYCoord, text: String},
@@ -57,7 +57,7 @@ pub enum Geometry {
 pub struct Shape {
     pub layer: Layer,
     pub geom: Geometry,
-    pub thickness: f32 // Move this down in to Geometry?
+    pub thickness: f32, // Move this down in to Geometry?
 }
 
 impl Shape {
@@ -67,19 +67,17 @@ impl Shape {
             layer,
             geom: Geometry::Circle {
                 center,
-                radius: radius/2.0
+                radius: radius / 2.0,
             },
-            thickness: radius
+            thickness: radius,
         }
     }
 
     pub fn line(start: XYCoord, end: XYCoord, width: f32, layer: Layer) -> Self {
         Shape {
             layer,
-            geom: Geometry::Line {
-                ends: [start, end]
-            },
-            thickness: width
+            geom: Geometry::Line { ends: [start, end] },
+            thickness: width,
         }
     }
 
@@ -87,13 +85,23 @@ impl Shape {
         let mut s = String::new();
 
         match self.geom {
-            Geometry::Circle{ref center, ref radius} => {
-                s.push_str(&format!(" (fp_circle (center {} {}) (end {} {})",
-                    center.x, center.y, center.x + radius, center.y));
-            },
-            Geometry::Line{ref ends} => {
-                s.push_str(&format!(" (fp_line (start {} {}) (end {} {})",
-                    ends[0].x, ends[0].y, ends[1].x, ends[1].y));
+            Geometry::Circle {
+                ref center,
+                ref radius,
+            } => {
+                s.push_str(&format!(
+                    " (fp_circle (center {} {}) (end {} {})",
+                    center.x,
+                    center.y,
+                    center.x + radius,
+                    center.y
+                ));
+            }
+            Geometry::Line { ref ends } => {
+                s.push_str(&format!(
+                    " (fp_line (start {} {}) (end {} {})",
+                    ends[0].x, ends[0].y, ends[1].x, ends[1].y
+                ));
             }
         }
 
