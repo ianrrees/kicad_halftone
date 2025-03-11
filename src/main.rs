@@ -1,5 +1,4 @@
-extern crate clap;
-use clap::{Arg, Command};
+use clap::Parser;
 
 extern crate image;
 
@@ -28,70 +27,79 @@ struct ProgramSettings {
     params: HalftoneParameters,
 }
 
+#[derive(Parser, Debug)]
+#[command(
+    version=clap::crate_version!(),
+    about="Generate KiCad footprints from bitmaps, using halftone technique",
+    long_about="
+Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width \
+and output height needs to be specified.  If one is specified, then the input image's aspect ratio \
+will be preserved, but if both are specified the image will be scaled to fit.")]
+struct Args {
+    #[arg(help = "Raster image source")]
+    input: String,
+    #[arg(help = "Output file name - defaults input base name")]
+    output: Option<String>,
+    #[arg(
+        short = 's',
+        long = "spacing",
+        default_value_t = 1.1,
+        help = "Spacing between dots [mm]"
+    )]
+    dot_spacing: f32,
+    // Minimum diameter from dirtypcbs.com
+    #[arg(
+        short = 'd',
+        long = "dot-min",
+        default_value_t = 0.15,
+        help = "Minimum diameter of dots [mm]"
+    )]
+    dot_min_diam: f32,
+    #[arg(
+        short = 'D',
+        long = "dot-max",
+        default_value_t = 1.2,
+        help = "Maximum diameter of dots [mm]"
+    )]
+    dot_max_diam: f32,
+    #[arg(
+        short = 'w',
+        long = "width",
+        default_value_t = 0.0,
+        help = "Output width [mm]"
+    )]
+    output_width: f32,
+    // nb the dumb choices for argument names means -h would clobber --help
+    #[arg(long = "height", default_value_t = 0.0, help = "Output height [mm]")]
+    output_height: f32,
+    #[arg(short = 'i', long = "invert", help = "Invert image brightness")]
+    invert: bool,
+}
+
 /// Parses command line arguments
 fn parse_command_line() -> Result<ProgramSettings, String> {
     let default_output_extension = "kicad_mod";
 
-    let cli = Command::new(clap::crate_name!())
-        .version(clap::crate_version!())
-        .author(clap::crate_authors!())
-        .about("Generate KiCad footprints from bitmaps, using halftone technique")
-        .long_about(
-"Generate KiCad footprints from bitmaps, using halftone technique.  At least one of output width \
-and output height needs to be specified.  If one is specified, then the input image's aspect ratio \
-will be preserved, but if both are specified the image will be scaled to fit.")
-        .arg(Arg::new("INPUT")
-           .help("Raster image source")
-           .index(1))
-        .arg(Arg::new("OUTPUT")
-           .help("Output file name - defaults input base name")
-           .index(2))
-        .arg(Arg::new("dot_spacing") //.takes_value(true)
-            .help("Spacing between dots [mm]")
-            .short('s').long("spacing"))
-        .arg(Arg::new("dot_min_diam") //.takes_value(true)
-            .help("Minimum diameter of dots [mm]")
-            .short('d').long("dot-min"))
-        .arg(Arg::new("dot_max_diam") //.takes_value(true)
-            .help("Maximum diameter of dots [mm]")
-            .short('D').long("dot-max"))
-        .arg(Arg::new("output_width") //.takes_value(true)
-            .help("Output width [mm]")
-            .short('w').long("width"))
-        // .disable_help_flag(true) // Bad design - masks help short argument
-        .arg(Arg::new("output_height") //.takes_value(true)
-            .help("Output height [mm]")
-            .long("height"))
-        .arg(Arg::new("invert")
-            .help("Invert image brightness")
-            .short('i').long("invert"))
-        .get_matches();
+    let cli = Args::parse();
 
     let mut params = HalftoneParameters {
-        dot_spacing: *cli.get_one::<f32>("dot_spacing").unwrap_or(&1.1),
-        dot_min_diam: *cli.get_one::<f32>("dot_min_diam").unwrap_or(&0.15), // From dirtypcbs.com
-        dot_max_diam: *cli.get_one::<f32>("dot_max_diam").unwrap_or(&1.2),
-        output_width: *cli.get_one::<f32>("output_width").unwrap_or(&0.0),
-        output_height: *cli.get_one::<f32>("output_height").unwrap_or(&0.0),
-        invert: cli.contains_id("invert"),
+        dot_spacing: cli.dot_spacing,
+        dot_min_diam: cli.dot_min_diam,
+        dot_max_diam: cli.dot_max_diam,
+        output_width: cli.output_width,
+        output_height: cli.output_height,
+        invert: cli.invert,
     };
-
-    if !cli.contains_id("INPUT") {
-        return Err("Input file name is required".to_string());
-    }
 
     // Currently (November 2018), it seems that the Rust Path library doesn't have traits like
     // FromStr, so we need to use Strings for the command line parsing, then build Paths explicitly
-    let input_filename = cli
-        .get_one::<String>("INPUT")
-        .expect("Input file name is required");
-    let input_path = Path::new(&input_filename);
+    let input_path = Path::new(&cli.input);
     if !input_path.is_file() {
-        return Err(format!("Couldn't read {}", &input_filename));
+        return Err(format!("Couldn't read {}", &cli.input));
     }
 
-    let output_path = if cli.contains_id("OUTPUT") {
-        Path::new(&cli.get_one::<String>("OUTPUT").unwrap_or(&"".to_string())).to_path_buf()
+    let output_path = if let Some(output_name) = cli.output {
+        Path::new(&output_name).to_path_buf()
     } else {
         match input_path
             .with_extension(&default_output_extension)
